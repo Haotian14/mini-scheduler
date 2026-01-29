@@ -6,26 +6,28 @@ const app = express();
 app.use(express.json());
 
 /**
- * In-memory state (demo)
+ * ======================
+ * In-memory state
+ * ======================
  */
 const workers = new Map(); // workerId -> worker
 const tasks = new Map(); // taskId -> task
-const taskLogs = new Map(); // taskId -> string[] (ring buffer)
-
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const taskLogs = new Map(); // taskId -> string[]
 
 /**
- * WS clients
+ * ======================
+ * HTTP + WebSocket
+ * ======================
  */
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 const wsClients = new Set();
 
 wss.on("connection", (ws) => {
   wsClients.add(ws);
-  ws.on("close", () => wsClients.delete(ws));
-
-  // optional: allow subscribing logs per task
   ws.subscribedTaskId = null;
+
+  ws.on("close", () => wsClients.delete(ws));
 
   ws.on("message", (raw) => {
     try {
@@ -40,29 +42,37 @@ wss.on("connection", (ws) => {
   wsSend(ws, { type: "tasks:update", tasks: snapshotTasks() });
 });
 
-function broadcast(msg) {
-  const data = JSON.stringify(msg);
-  for (const ws of wsClients) {
-    if (ws.readyState !== 1) continue;
-    // If it's a log message, only send to subscribers of that task (or if no filtering desired, remove this if)
-    if (msg.type === "task:log") {
-      if (ws.subscribedTaskId !== msg.taskId) continue;
-    }
-    ws.send(data);
-  }
-}
 function wsSend(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
+function broadcast(msg) {
+  const data = JSON.stringify(msg);
+  for (const ws of wsClients) {
+    if (ws.readyState !== 1) continue;
+    if (msg.type === "task:log" && ws.subscribedTaskId !== msg.taskId) continue;
+    ws.send(data);
+  }
+}
+
 /**
+ * ======================
  * Helpers
+ * ======================
  */
 function now() {
   return Date.now();
 }
+
 function makeId(prefix = "id") {
   return `${prefix}_${now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function ringAppendLog(taskId, line, limit = 5000) {
+  const arr = taskLogs.get(taskId) ?? [];
+  arr.push(line);
+  if (arr.length > limit) arr.splice(0, arr.length - limit);
+  taskLogs.set(taskId, arr);
 }
 
 function snapshotWorkers() {
@@ -78,20 +88,15 @@ function snapshotWorkers() {
     runningTasks: [...w.runningTasks],
   }));
 }
+
 function snapshotTasks() {
   return [...tasks.values()].map((t) => ({ ...t }));
 }
 
-function ringAppendLog(taskId, line, limit = 5000) {
-  const arr = taskLogs.get(taskId) ?? [];
-  arr.push(line);
-  if (arr.length > limit) arr.splice(0, arr.length - limit);
-  taskLogs.set(taskId, arr);
-}
-
 /**
- * Bin packing (Best-Fit)
- * Choose feasible worker with minimal leftover score.
+ * ======================
+ * Scheduling
+ * ======================
  */
 function pickWorkerBestFit(cpuReq, memReq) {
   let best = null;
@@ -102,10 +107,8 @@ function pickWorkerBestFit(cpuReq, memReq) {
 
     const cpuFree = w.cpuTotal - w.cpuUsed;
     const memFree = w.memTotal - w.memUsed;
-
     if (cpuFree < cpuReq || memFree < memReq) continue;
 
-    // smaller leftover => better fit
     const score =
       (cpuFree - cpuReq) / w.cpuTotal + (memFree - memReq) / w.memTotal;
 
@@ -118,11 +121,43 @@ function pickWorkerBestFit(cpuReq, memReq) {
 }
 
 /**
- * Routes - Worker side
+ * ⭐ 唯一调度入口：所有 Pending 任务都从这里调度
+ */
+function trySchedulePendingTasks() {
+  for (const task of tasks.values()) {
+    if (task.status !== "PENDING") continue;
+
+    const w = pickWorkerBestFit(task.cpuRequired, task.memRequired);
+    if (!w) continue;
+
+    task.assignedWorkerId = w.id;
+    task.status = "RUNNING";
+    task.startedAt = now();
+
+    w.cpuUsed += task.cpuRequired;
+    w.memUsed += task.memRequired;
+    w.runningTasks.add(task.id);
+
+    broadcast({ type: "tasks:update", tasks: snapshotTasks() });
+    broadcast({ type: "cluster:update", workers: snapshotWorkers() });
+
+    dispatchToWorker(w, task).catch((e) => {
+      task.status = "FAILED";
+      task.finishedAt = now();
+      ringAppendLog(task.id, `Dispatch failed: ${String(e)}`);
+      broadcast({ type: "tasks:update", tasks: snapshotTasks() });
+    });
+  }
+}
+
+/**
+ * ======================
+ * Worker routes
+ * ======================
  */
 app.post("/workers/register", (req, res) => {
-  const { workerId, host, cpuTotal, memTotal, port } = req.body || {};
-  if (!workerId || !cpuTotal || !memTotal || !port) {
+  const { workerId, host, port, cpuTotal, memTotal } = req.body || {};
+  if (!workerId || !port || !cpuTotal || !memTotal) {
     return res.status(400).json({ error: "missing fields" });
   }
 
@@ -134,13 +169,15 @@ app.post("/workers/register", (req, res) => {
     memTotal,
     cpuUsed: 0,
     memUsed: 0,
-    lastHeartbeatAt: now(),
     status: "ONLINE",
+    lastHeartbeatAt: now(),
     runningTasks: new Set(),
   });
 
   broadcast({ type: "cluster:update", workers: snapshotWorkers() });
-  return res.json({ ok: true });
+  trySchedulePendingTasks();
+
+  res.json({ ok: true });
 });
 
 app.post("/workers/heartbeat", (req, res) => {
@@ -150,13 +187,14 @@ app.post("/workers/heartbeat", (req, res) => {
 
   w.lastHeartbeatAt = now();
   w.status = "ONLINE";
-
   if (typeof cpuUsed === "number") w.cpuUsed = cpuUsed;
   if (typeof memUsed === "number") w.memUsed = memUsed;
   if (Array.isArray(runningTaskIds)) w.runningTasks = new Set(runningTaskIds);
 
   broadcast({ type: "cluster:update", workers: snapshotWorkers() });
-  return res.json({ ok: true });
+  trySchedulePendingTasks();
+
+  res.json({ ok: true });
 });
 
 app.post("/workers/task/:taskId/log", (req, res) => {
@@ -167,9 +205,9 @@ app.post("/workers/task/:taskId/log", (req, res) => {
 
   const line = `[${stream || "stdout"}] ${chunk ?? ""}`;
   ringAppendLog(taskId, line);
-
   broadcast({ type: "task:log", taskId, line });
-  return res.json({ ok: true });
+
+  res.json({ ok: true });
 });
 
 app.post("/workers/task/:taskId/finish", (req, res) => {
@@ -181,11 +219,8 @@ app.post("/workers/task/:taskId/finish", (req, res) => {
 
   t.finishedAt = now();
   t.exitCode = exitCode;
+  t.status = exitCode === 0 ? "SUCCESS" : "FAILED";
 
-  if (exitCode === 0) t.status = "SUCCESS";
-  else t.status = "FAILED";
-
-  // release resources
   const w = workers.get(t.assignedWorkerId);
   if (w) {
     w.cpuUsed = Math.max(0, w.cpuUsed - t.cpuRequired);
@@ -196,11 +231,14 @@ app.post("/workers/task/:taskId/finish", (req, res) => {
   broadcast({ type: "tasks:update", tasks: snapshotTasks() });
   broadcast({ type: "cluster:update", workers: snapshotWorkers() });
 
-  return res.json({ ok: true });
+  trySchedulePendingTasks();
+  res.json({ ok: true });
 });
 
 /**
- * Routes - User side
+ * ======================
+ * User routes
+ * ======================
  */
 app.post("/tasks", (req, res) => {
   const { command, cpu_required, mem_required } = req.body || {};
@@ -221,63 +259,27 @@ app.post("/tasks", (req, res) => {
     finishedAt: null,
     exitCode: null,
   };
+
   tasks.set(taskId, task);
   ringAppendLog(taskId, `Task created: ${command}`);
 
   broadcast({ type: "tasks:update", tasks: snapshotTasks() });
+  trySchedulePendingTasks();
 
-  // schedule immediately (demo)
-  const w = pickWorkerBestFit(cpu_required, mem_required);
-  if (!w) {
-    ringAppendLog(taskId, "No available worker for this task.");
-    return res.json({
-      taskId,
-      status: "PENDING",
-      note: "no available worker yet",
-    });
-  }
-
-  // assign
-  task.assignedWorkerId = w.id;
-  task.status = "RUNNING";
-  task.startedAt = now();
-
-  w.cpuUsed += cpu_required;
-  w.memUsed += mem_required;
-  w.runningTasks.add(taskId);
-
-  broadcast({ type: "tasks:update", tasks: snapshotTasks() });
-  broadcast({ type: "cluster:update", workers: snapshotWorkers() });
-
-  // dispatch to worker
-  dispatchToWorker(w, task).catch((e) => {
-    ringAppendLog(taskId, `Dispatch failed: ${String(e)}`);
-    task.status = "FAILED";
-    task.finishedAt = now();
-    broadcast({ type: "tasks:update", tasks: snapshotTasks() });
-  });
-
-  return res.json({ taskId, status: task.status, assignedWorkerId: w.id });
-});
-
-app.get("/tasks/:taskId", (req, res) => {
-  const t = tasks.get(req.params.taskId);
-  if (!t) return res.status(404).json({ error: "not found" });
-  return res.json(t);
+  res.json({ taskId, status: task.status });
 });
 
 app.get("/tasks/:taskId/logs", (req, res) => {
-  const arr = taskLogs.get(req.params.taskId) ?? [];
-  return res.json({ lines: arr });
+  res.json({ lines: taskLogs.get(req.params.taskId) ?? [] });
 });
 
 /**
- * dispatch helper
+ * ======================
+ * Worker dispatch
+ * ======================
  */
 async function dispatchToWorker(w, task) {
-  // Node18 has fetch built-in. If your Node is older, install node-fetch.
-  const url = `http://${w.host}:${w.port}/run`;
-  const resp = await fetch(url, {
+  const resp = await fetch(`http://${w.host}:${w.port}/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -285,45 +287,45 @@ async function dispatchToWorker(w, task) {
       command: task.command,
       cpuRequired: task.cpuRequired,
       memRequired: task.memRequired,
-      masterUrl: `http://127.0.0.1:${PORT}`,
     }),
   });
-  if (!resp.ok) throw new Error(`worker resp ${resp.status}`);
+
+  if (!resp.ok) {
+    throw new Error(`Worker response ${resp.status}`);
+  }
 }
 
 /**
- * offline detector
+ * ======================
+ * Offline detector
+ * ======================
  */
 setInterval(() => {
-  const deadline = now() - 6000; // 6s no heartbeat => OFFLINE
+  const deadline = now() - 6000;
   let changed = false;
 
   for (const w of workers.values()) {
     if (w.lastHeartbeatAt < deadline && w.status !== "OFFLINE") {
       w.status = "OFFLINE";
-      changed = true;
-
-      // mark running tasks failed (simple strategy)
-      for (const taskId of w.runningTasks) {
-        const t = tasks.get(taskId);
-        if (t && t.status === "RUNNING") {
-          t.status = "FAILED";
-          t.finishedAt = now();
-          ringAppendLog(taskId, "Worker offline: task marked FAILED.");
-        }
-      }
       w.runningTasks.clear();
       w.cpuUsed = 0;
       w.memUsed = 0;
+      changed = true;
     }
   }
 
   if (changed) {
     broadcast({ type: "cluster:update", workers: snapshotWorkers() });
     broadcast({ type: "tasks:update", tasks: snapshotTasks() });
+    trySchedulePendingTasks();
   }
 }, 2000);
 
+/**
+ * ======================
+ * Start server
+ * ======================
+ */
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 server.listen(PORT, () => {
   console.log(`[master] listening on http://127.0.0.1:${PORT}`);

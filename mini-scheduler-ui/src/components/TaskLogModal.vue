@@ -17,7 +17,12 @@ const logs = computed(() => state.logs.get(state.activeTaskId) || []);
 
 const { container, onScroll, scrollToBottom } = useAutoScroll();
 
-watch(logs, () => scrollToBottom());
+watch(
+  () => logs.value.length,
+  () => {
+    scrollToBottom();
+  },
+);
 
 function close() {
   state.activeTaskId = "";
