@@ -1,0 +1,12 @@
+{
+  "name": "mini-scheduler-worker",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "node worker.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "mini-scheduler-master",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "master.js",
+  "scripts": {
+    "dev": "node master.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  }
+}
