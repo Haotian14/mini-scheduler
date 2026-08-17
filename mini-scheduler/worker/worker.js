@@ -84,8 +84,21 @@ setInterval(() => {
 app.post("/run", async (req, res) => {
   const { taskId, command, cpuRequired, memRequired } = req.body || {};
 
-  if (!taskId || !command) {
+  if (!taskId || typeof command !== "string" || !command.trim()) {
     return res.status(400).json({ error: "missing taskId or command" });
+  }
+
+  if (
+    !Number.isFinite(cpuRequired) ||
+    cpuRequired <= 0 ||
+    !Number.isFinite(memRequired) ||
+    memRequired <= 0
+  ) {
+    return res.status(400).json({ error: "invalid resource requirements" });
+  }
+
+  if (runningTasks.has(taskId)) {
+    return res.status(409).json({ error: "task is already running" });
   }
 
   // 本地资源检查（防御式）
@@ -106,6 +119,13 @@ app.post("/run", async (req, res) => {
     cpu: cpuRequired,
     mem: memRequired,
     proc,
+  });
+
+  proc.on("error", (error) => {
+    masterPost(`/workers/task/${taskId}/log`, {
+      stream: "stderr",
+      chunk: error.message,
+    }).catch(() => {});
   });
 
   /**
@@ -145,6 +165,16 @@ app.post("/run", async (req, res) => {
   });
 
   return res.json({ ok: true, workerId: WORKER_ID });
+});
+
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    workerId: WORKER_ID,
+    runningTasks: runningTasks.size,
+    cpuUsed,
+    memUsed,
+  });
 });
 
 /**
