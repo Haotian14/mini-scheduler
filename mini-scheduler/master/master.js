@@ -4,6 +4,13 @@ import { WebSocketServer } from "ws";
 
 const app = express();
 app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", process.env.CORS_ORIGIN || "*");
+  res.setHeader("Access-Control-Allow-Headers", "content-type");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 
 /**
  * ======================
@@ -144,8 +151,14 @@ function trySchedulePendingTasks() {
     dispatchToWorker(w, task).catch((e) => {
       task.status = "FAILED";
       task.finishedAt = now();
+      task.exitCode = -1;
+      w.cpuUsed = Math.max(0, w.cpuUsed - task.cpuRequired);
+      w.memUsed = Math.max(0, w.memUsed - task.memRequired);
+      w.runningTasks.delete(task.id);
       ringAppendLog(task.id, `Dispatch failed: ${String(e)}`);
       broadcast({ type: "tasks:update", tasks: snapshotTasks() });
+      broadcast({ type: "cluster:update", workers: snapshotWorkers() });
+      trySchedulePendingTasks();
     });
   }
 }
@@ -242,14 +255,24 @@ app.post("/workers/task/:taskId/finish", (req, res) => {
  */
 app.post("/tasks", (req, res) => {
   const { command, cpu_required, mem_required } = req.body || {};
-  if (!command || !cpu_required || !mem_required) {
-    return res.status(400).json({ error: "missing fields" });
+  if (typeof command !== "string" || !command.trim()) {
+    return res.status(400).json({ error: "command must be a non-empty string" });
+  }
+  if (
+    !Number.isFinite(cpu_required) ||
+    cpu_required <= 0 ||
+    !Number.isFinite(mem_required) ||
+    mem_required <= 0
+  ) {
+    return res
+      .status(400)
+      .json({ error: "cpu_required and mem_required must be positive numbers" });
   }
 
   const taskId = makeId("task");
   const task = {
     id: taskId,
-    command,
+    command: command.trim(),
     cpuRequired: cpu_required,
     memRequired: mem_required,
     status: "PENDING",
@@ -268,6 +291,17 @@ app.post("/tasks", (req, res) => {
 
   res.json({ taskId, status: task.status });
 });
+
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    workers: workers.size,
+    tasks: tasks.size,
+    uptime: process.uptime(),
+  });
+});
+
+app.get("/tasks", (_req, res) => res.json({ tasks: snapshotTasks() }));
 
 app.get("/tasks/:taskId/logs", (req, res) => {
   res.json({ lines: taskLogs.get(req.params.taskId) ?? [] });
@@ -307,6 +341,15 @@ setInterval(() => {
   for (const w of workers.values()) {
     if (w.lastHeartbeatAt < deadline && w.status !== "OFFLINE") {
       w.status = "OFFLINE";
+      for (const taskId of w.runningTasks) {
+        const task = tasks.get(taskId);
+        if (task?.status === "RUNNING") {
+          task.status = "PENDING";
+          task.assignedWorkerId = null;
+          task.startedAt = null;
+          ringAppendLog(taskId, "Worker went offline; task returned to queue");
+        }
+      }
       w.runningTasks.clear();
       w.cpuUsed = 0;
       w.memUsed = 0;
