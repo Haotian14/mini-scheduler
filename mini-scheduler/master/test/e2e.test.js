@@ -135,10 +135,22 @@ test("a task submitted to the master runs on a worker and streams its output", a
     "no full-state rebroadcast after the snapshot",
   );
 
-  // Capacity accounting survives the whole round trip.
-  const { workers } = await (await call("/workers")).json();
-  assert.equal(workers[0].cpuUsed, 0);
-  assert.deepEqual(workers[0].runningTasks, []);
+  // Capacity accounting survives the whole round trip. The reservation the
+  // master owns is dropped the moment the result lands; the usage the worker
+  // reports is by definition one heartbeat behind, and `cpuUsed` is the
+  // conservative maximum of the two, so it converges rather than snapping.
+  const [released] = (await (await call("/workers")).json()).workers;
+  assert.equal(released.cpuReserved, 0, "the reservation is released synchronously");
+  assert.deepEqual(released.runningTasks, []);
+
+  const converged = await waitFor(
+    async () => {
+      const [worker] = (await (await call("/workers")).json()).workers;
+      return worker.cpuUsed === 0 ? worker : null;
+    },
+    { what: "reported usage to catch up with the released reservation" },
+  );
+  assert.equal(converged.memUsed, 0);
 
   socket.close();
 });
