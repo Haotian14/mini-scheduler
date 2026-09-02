@@ -1,0 +1,178 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap");
+
+:root {
+  --violet: #6d5ce8;
+  --violet-soft: #f0edff;
+  --ink: #172033;
+  --ink-soft: #687286;
+  --muted: #98a0ae;
+  --surface: #ffffff;
+  --canvas: #f5f7fb;
+  --border: #e7eaf0;
+  --green: #2aa876;
+  --amber: #d99a26;
+  --red: #cb4f5c;
+  --radius: 11px;
+  --shadow: 0 2px 4px rgba(25, 33, 58, 0.04);
+
+  font-family: "DM Sans", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: Manrope, "DM Sans", sans-serif;
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ *
+ * Buttons
+ * ------------------------------------------------------------------ */
+
+.primary {
+  border: 0;
+  border-radius: 8px;
+  background: var(--violet);
+  color: #fff;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 5px 12px rgba(109, 92, 232, 0.22);
+}
+
+.primary b {
+  font-size: 15px;
+  margin-right: 5px;
+}
+
+.secondary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 9px 15px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.ghost {
+  border: 0;
+  background: transparent;
+  color: var(--violet);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0 6px;
+  color: var(--violet);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.link.danger {
+  color: var(--red);
+}
+
+.banner {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: #fdf1f2;
+  border: 1px solid #f6dfe2;
+  color: #9c4954;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Forms
+ * ------------------------------------------------------------------ */
+
+.task-form label {
+  display: flex;
+  flex-direction: column;
+  color: #3b4454;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.task-form label small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  margin: 3px 0 7px;
+}
+
+.task-form input,
+.task-form textarea {
+  border: 1px solid #dfe3ea;
+  border-radius: 8px;
+  padding: 10px;
+  outline: 0;
+  resize: vertical;
+  font-family: inherit;
+  margin-top: 6px;
+}
+
+.task-form input:focus,
+.task-form textarea:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(117, 100, 232, 0.1);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 12px;
+  margin: 0;
+}

@@ -1,13 +1,19 @@
 {
   "name": "mini-scheduler-master",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "Nimbus scheduler master: placement, task lifecycle and realtime fan-out",
   "type": "module",
   "main": "master.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "node master.js"
+    "dev": "node master.js",
+    "start": "node master.js",
+    "test": "node --test"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^5.2.1",
     "ws": "^8.17.1"
   }
 }

@@ -1,0 +1,70 @@
+# Brings up a master, two workers of different sizes, and the dashboard.
+#
+#   SCHEDULER_TOKEN=$(openssl rand -hex 16) docker compose up --build
+#
+# The token is required: the task API executes shell commands.
+name: nimbus-scheduler
+
+services:
+  master:
+    build:
+      context: .
+      target: master
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SCHEDULER_TOKEN: ${SCHEDULER_TOKEN:?set SCHEDULER_TOKEN before starting}
+      CORS_ORIGIN: http://localhost:8080
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker-large:
+    build:
+      context: .
+      target: worker
+    environment:
+      NODE_ENV: production
+      SCHEDULER_TOKEN: ${SCHEDULER_TOKEN:?set SCHEDULER_TOKEN before starting}
+      MASTER_URL: http://master:3000
+      WORKER_ID: worker-large
+      WORKER_HOST: worker-large
+      WORKER_PORT: 4001
+      CPU_TOTAL: 4
+      MEM_TOTAL: 8
+    depends_on:
+      master:
+        condition: service_healthy
+
+  worker-small:
+    build:
+      context: .
+      target: worker
+    environment:
+      NODE_ENV: production
+      SCHEDULER_TOKEN: ${SCHEDULER_TOKEN:?set SCHEDULER_TOKEN before starting}
+      MASTER_URL: http://master:3000
+      WORKER_ID: worker-small
+      WORKER_HOST: worker-small
+      WORKER_PORT: 4001
+      CPU_TOTAL: 2
+      MEM_TOTAL: 4
+    depends_on:
+      master:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: mini-scheduler-ui/Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3000
+        VITE_SCHEDULER_TOKEN: ${SCHEDULER_TOKEN:?set SCHEDULER_TOKEN before starting}
+    ports:
+      - "8080:80"
+    depends_on:
+      - master
