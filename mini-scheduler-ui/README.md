@@ -1,5 +1,31 @@
-# Vue 3 + TypeScript + Vite
+# Nimbus Dashboard
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+The scheduler's web UI: Vue 3 + TypeScript + Vite, no component framework.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+```bash
+npm install          # from the repository root (npm workspaces)
+npm run dev:ui       # http://localhost:5173
+```
+
+Copy `.env.example` to `.env.local` and set `VITE_API_URL` /
+`VITE_SCHEDULER_TOKEN` to point at your master.
+
+## How it is put together
+
+| Path | Responsibility |
+|---|---|
+| `src/store/cluster.ts` | Reactive state, entity maps and derived metrics |
+| `src/api/client.ts` | REST calls (create, cancel, logs) |
+| `src/api/socket.ts` | WebSocket: snapshot, incremental events, reconnect |
+| `src/components/` | Presentational components, one concern each |
+| `src/composables/` | `useNow`, `useAutoScroll`, `useToast` |
+| `src/styles/` | `base` (tokens, buttons, forms), `layout`, `components` |
+
+Two things worth knowing:
+
+- The master sends **one snapshot then deltas**, so workers and tasks live in
+  `Map`s keyed by id and are patched in place rather than replaced.
+- Relative timestamps use the master's clock (`serverTime` from each frame)
+  rather than the browser's, so "heartbeat 3s ago" stays honest under clock skew.
+
+See the [root README](../readme.md) for the whole system.

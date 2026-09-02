@@ -1,12 +1,18 @@
 {
   "name": "mini-scheduler-worker",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "Nimbus scheduler worker: runs tasks and streams their output back",
   "type": "module",
   "main": "worker.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "dev": "node worker.js"
+    "dev": "node worker.js",
+    "start": "node worker.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^5.2.1"
   }
 }

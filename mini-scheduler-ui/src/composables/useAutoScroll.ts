@@ -1,26 +1,32 @@
-import { ref, nextTick } from "vue";
+import { nextTick, ref, type Ref } from "vue";
 
-export function useAutoScroll() {
-  const container = ref<HTMLElement | null>(null);
-  let shouldFollow = true;
+const FOLLOW_THRESHOLD_PX = 80;
+
+/**
+ * Keeps a scrollable log view pinned to the bottom, but stops following as soon
+ * as the reader scrolls up — and resumes when they scroll back down.
+ */
+export function useAutoScroll(container: Ref<HTMLElement | null>) {
+  const following = ref(true);
 
   function onScroll() {
-    if (!container.value) return;
-    const { scrollTop, scrollHeight, clientHeight } = container.value;
-
-    // 距离底部 < 80px 才自动跟随
-    shouldFollow = scrollHeight - (scrollTop + clientHeight) < 80;
+    const element = container.value;
+    if (!element) return;
+    const distanceFromBottom =
+      element.scrollHeight - (element.scrollTop + element.clientHeight);
+    following.value = distanceFromBottom < FOLLOW_THRESHOLD_PX;
   }
 
-  async function scrollToBottom() {
-    if (!shouldFollow) return;
-    await nextTick(); // 等 DOM 更新完成
+  async function scrollToBottom({ force = false } = {}) {
+    if (!following.value && !force) return;
+    await nextTick();
     requestAnimationFrame(() => {
-      if (container.value) {
-        container.value.scrollTop = container.value.scrollHeight;
-      }
+      const element = container.value;
+      if (!element) return;
+      element.scrollTop = element.scrollHeight;
+      following.value = true;
     });
   }
 
-  return { container, onScroll, scrollToBottom };
+  return { following, onScroll, scrollToBottom };
 }
