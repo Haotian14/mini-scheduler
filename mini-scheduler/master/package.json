@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node master.js",
     "start": "node master.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^5.2.1",
