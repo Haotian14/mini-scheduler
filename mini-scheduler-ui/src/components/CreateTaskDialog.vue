@@ -2,7 +2,7 @@
 import { reactive, ref, watch } from "vue";
 
 import BaseModal from "./BaseModal.vue";
-import { createTask } from "../api/client";
+import { backend } from "../api/backend";
 import { notify } from "../composables/useToast";
 
 const props = defineProps<{ open: boolean }>();
@@ -34,7 +34,7 @@ async function submit() {
 
   submitting.value = true;
   try {
-    await createTask({ ...form, command: form.command.trim() });
+    await backend.createTask({ ...form, command: form.command.trim() });
     notify("Task added to the queue");
     form.command = "";
     emit("close");

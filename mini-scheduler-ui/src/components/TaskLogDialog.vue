@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 
 import BaseModal from "./BaseModal.vue";
-import { unsubscribeLog } from "../api/socket";
+import { backend } from "../api/backend";
 import { useAutoScroll } from "../composables/useAutoScroll";
 import { store } from "../store/cluster";
 
@@ -25,7 +25,7 @@ watch(
 
 function close() {
   store.activeTaskId = "";
-  unsubscribeLog();
+  backend.unsubscribeLog();
 }
 </script>
 

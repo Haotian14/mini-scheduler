@@ -2,7 +2,11 @@
 
 一个面向本地开发与小型集群的轻量级分布式任务调度系统：Master 负责资源感知调度与任务生命周期管理，Worker 负责执行任务并回传日志，前端 Dashboard 通过 WebSocket 实时展示集群状态。
 
-> **定位说明**：这是一个**教学与作品集性质的简化实现**，用来把调度、实时通信、故障恢复这几件事完整地做对。它没有持久化存储、没有沙箱隔离、也没有多 Master 高可用，因此不能直接用于生产环境。第 8 节列出了明确的能力边界。
+**在线演示**：<https://haotian14.github.io/mini-scheduler/>
+
+演示页面里跑的**不是录像、也不是重写的假算法**——它直接 import 了 Master 的 `ClusterState`、`Scheduler`、`loadConfig` 这三个真实模块（它们不依赖任何 Node API），在浏览器里对着一队模拟 Worker 运行。被替换掉的只有两样真正需要机器的东西：到 Worker 的 HTTP 分发，以及子进程执行。所以你在页面上看到的调度、预占、老化屏障、重试、掉线回收，全都是生产代码路径。详见第 7 节。
+
+> **定位说明**：这是一个**教学与作品集性质的简化实现**，用来把调度、实时通信、故障恢复这几件事完整地做对。它没有持久化存储、没有沙箱隔离、也没有多 Master 高可用，因此不能直接用于生产环境。第 9 节列出了明确的能力边界。
 
 ---
 
@@ -87,6 +91,7 @@ SCHEDULER_TOKEN=$(openssl rand -hex 16) docker compose up --build
 │  │  │  ├─ events.js           # WebSocket 增量事件广播
 │  │  │  ├─ dispatcher.js       # 到 Worker 的 HTTP 客户端
 │  │  │  ├─ server.js           # 依赖装配
+│  │  │  ├─ *.d.ts              # 类型声明（前端演示模式复用这些模块）
 │  │  │  └─ http/               # 路由、CORS、鉴权中间件
 │  │  └─ test/                  # 40 个测试，含端到端
 │  └─ worker/
@@ -94,8 +99,11 @@ SCHEDULER_TOKEN=$(openssl rand -hex 16) docker compose up --build
 │     ├─ src/{config,reporter,runner,server,auth}.js
 │     └─ test/                  # 16 个测试
 ├─ mini-scheduler-ui/           # Vue 3 + TypeScript + Vite
+│  └─ src/demo/                # 浏览器内的模拟集群（复用 Master 真实模块）
 ├─ docker-compose.yml
-└─ .github/workflows/ci.yml
+└─ .github/workflows/
+   ├─ ci.yml                   # lint + 类型 + 测试 + 构建（Node 20 / 22）
+   └─ pages.yml                # 构建演示版并发布到 GitHub Pages
 ```
 
 ---
@@ -232,7 +240,53 @@ Worker 原本每收到一个 stdout chunk 就发一个 HTTP 请求，一个 `yes
 
 ---
 
-## 7. 开发
+## 7. 在线演示与部署
+
+### 7.1 演示模式
+
+GitHub Pages 只能托管静态文件，而 Master 和 Worker 都是常驻 Node 进程——Worker 还要 `spawn()` 执行命令。把这样一个服务挂到公网等于把 RCE 开放给所有人，所以**只有前端被部署，后端在浏览器里模拟**。
+
+模拟的边界划得很清楚：
+
+| 部分 | 演示模式下 |
+|---|---|
+| `ClusterState`（资源账本、掉线回收、保留策略） | **真实模块**，原样运行 |
+| `Scheduler`（best-fit、backfill、老化屏障、重试、超时清扫） | **真实模块**，原样运行 |
+| `loadConfig`（参数） | **真实模块**，只是把时间常数调快便于观看 |
+| 到 Worker 的 HTTP 分发 | 模拟：定时器"跑"进程，按同样的 state API 回调 |
+| Worker 心跳与子进程 | 模拟：同样的间隔上报占用，按脚本吐日志 |
+
+这三个模块之所以能直接搬进浏览器，是因为重构时它们就被写成了零依赖的纯模块（`import` 数量为 0），Master 的 `package.json` 通过 `exports` 把它们单独暴露出来，前端以 workspace 依赖引用。
+
+页面上有三个按钮可以主动触发场景：
+
+- **Crash a worker** —— 让一个节点停止心跳，观察它变 `OFFLINE`、其上任务回队列并重新分配（表格里会显示 `attempt 2/3`）
+- **Queue a whole-node job** —— 提交一个需要整台最大节点的任务，观察小任务先 backfill、超过 `AGING_MS` 后屏障生效
+- **Pause traffic** —— 停掉自动生成的背景任务，方便你自己提交任务观察
+
+本地跑演示模式：
+
+```bash
+VITE_DEMO=true npm run dev:ui
+```
+
+也可以在任何部署上加 `?demo=1` 强制进入演示模式，或用 `?demo=0` 强制连真实 Master。
+
+### 7.2 部署到 GitHub Pages
+
+`.github/workflows/pages.yml` 在 push 到 `main` 时构建并发布。仓库设置里需要把
+**Settings → Pages → Source** 选成 **GitHub Actions**（只需一次）。
+
+构建时注入两个变量：`VITE_DEMO=true` 打开演示模式，`BASE_PATH=/<repo>/` 处理
+Pages 项目站点的子路径。
+
+### 7.3 部署真实集群
+
+不要把 Master / Worker 暴露到公网——它们会执行任意 shell 命令，在补上任务沙箱（见第 9 节）之前，这等同于开放 RCE。真要多机部署，请放在内网或 VPN 后面，并务必设置 `SCHEDULER_TOKEN`。
+
+---
+
+## 8. 开发
 
 ```bash
 npm run check         # lint + 格式检查 + 类型检查 + 测试 + 构建，CI 跑的就是这套
@@ -253,7 +307,7 @@ CI（GitHub Actions）在 Node 20 与 22 上跑上述全部内容，外加 `npm 
 
 ---
 
-## 8. 能力边界（明确不做的事）
+## 9. 能力边界（明确不做的事）
 
 这些是有意留下的边界，不是遗漏：
 
@@ -266,6 +320,6 @@ CI（GitHub Actions）在 Node 20 与 22 上跑上述全部内容，外加 `npm 
 
 ---
 
-## 9. 许可证
+## 10. 许可证
 
 [MIT](./LICENSE)
