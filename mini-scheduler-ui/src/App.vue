@@ -3,12 +3,13 @@ import { computed, onMounted, ref } from "vue";
 
 import AppSidebar from "./components/AppSidebar.vue";
 import CreateTaskDialog from "./components/CreateTaskDialog.vue";
+import DemoBar from "./components/DemoBar.vue";
 import MetricCard from "./components/MetricCard.vue";
 import TaskLogDialog from "./components/TaskLogDialog.vue";
 import TaskTable from "./components/TaskTable.vue";
 import ToastHost from "./components/ToastHost.vue";
 import WorkerFleet from "./components/WorkerFleet.vue";
-import { connect } from "./api/socket";
+import { backend, isDemo } from "./api/backend";
 import { type ViewName } from "./navigation";
 import { formatDuration } from "./composables/useNow";
 import {
@@ -25,7 +26,8 @@ const view = ref<ViewName>("overview");
 const showCreate = ref(false);
 
 const CONNECTION_LABELS: Record<typeof store.connectionStatus, string> = {
-  connected: "Live",
+  // In demo mode nothing is actually connected; say so rather than "Live".
+  connected: isDemo ? "Simulated" : "Live",
   connecting: "Connecting",
   disconnected: "Offline",
 };
@@ -58,7 +60,7 @@ const averageDurationLabel = computed(() =>
   averageDurationMs.value === null ? "—" : formatDuration(averageDurationMs.value),
 );
 
-onMounted(connect);
+onMounted(() => backend.connect());
 </script>
 
 <template>
@@ -80,6 +82,8 @@ onMounted(connect);
           <button class="primary" @click="showCreate = true"><b>＋</b> New task</button>
         </div>
       </header>
+
+      <DemoBar v-if="isDemo" />
 
       <p v-if="store.connectionStatus === 'disconnected'" class="banner">
         Lost the connection to the master. Reconnecting automatically…

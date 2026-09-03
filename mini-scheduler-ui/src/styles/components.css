@@ -582,3 +582,60 @@ td {
   font-size: 16px;
   line-height: 1;
 }
+
+/* ------------------------------------------------------------------ *
+ * Demo bar (only rendered by the simulated build)
+ * ------------------------------------------------------------------ */
+
+.demo-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding: 14px 18px;
+  border: 1px solid #e2ddfa;
+  border-left: 3px solid var(--violet);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #faf9ff, #f6f4ff);
+}
+
+.demo-copy strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.demo-copy p {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.demo-copy code {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.demo-copy a {
+  color: var(--violet);
+  font-weight: 600;
+}
+
+.demo-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.demo-actions .secondary {
+  font-size: 11px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}

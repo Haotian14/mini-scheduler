@@ -2,8 +2,7 @@
 import { computed, ref } from "vue";
 
 import EmptyState from "./EmptyState.vue";
-import { cancelTask } from "../api/client";
-import { subscribeLog } from "../api/socket";
+import { backend } from "../api/backend";
 import { formatDuration, useNow } from "../composables/useNow";
 import { notify } from "../composables/useToast";
 import { isTerminal, serverNow, store, taskList, type Task } from "../store/cluster";
@@ -85,13 +84,13 @@ function elapsed(task: Task) {
 
 function openLogs(taskId: string) {
   store.activeTaskId = taskId;
-  void subscribeLog(taskId);
+  backend.subscribeLog(taskId);
 }
 
 async function requestCancel(task: Task) {
   cancelling.value = task.id;
   try {
-    await cancelTask(task.id);
+    await backend.cancelTask(task.id);
     notify(`Cancelled ${shortId(task.id)}`);
   } catch (error) {
     notify(error instanceof Error ? error.message : "Unable to cancel task", "error");

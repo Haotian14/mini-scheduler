@@ -4,6 +4,13 @@
   "description": "Nimbus scheduler master: placement, task lifecycle and realtime fan-out",
   "type": "module",
   "main": "master.js",
+  "exports": {
+    ".": "./master.js",
+    "./state": "./src/state.js",
+    "./scheduler": "./src/scheduler.js",
+    "./config": "./src/config.js",
+    "./server": "./src/server.js"
+  },
   "engines": {
     "node": ">=20"
   },
